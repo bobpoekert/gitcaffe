@@ -1,6 +1,6 @@
 #!/usr/bin/env python2.7
 from subprocess import check_call, check_output, Popen, PIPE, STDOUT
-import json, sys, select, os, time
+import json, sys, select, os, time, signal
 
 commands = {}
 def command(fn):
@@ -33,7 +33,15 @@ def get_meta():
             _meta = json.load(inf)
     return _meta
 
+def changed_filenames():
+    res = [v.strip() for v in check_output(['git', 'diff', '--name-only', 'HEAD']).split('\n')]
+    return [v for v in res if v]
+
 def commit_prototxt(message):
+    changes = changed_filenames()
+    print repr(changes)
+    if len(changes) == 0:
+        return
     meta = get_meta()
     check_call(['git', 'add', meta['solver_fname']])
     check_call(['git', 'add', meta['train_val']])
@@ -43,10 +51,10 @@ def commit_prototxt(message):
 def init():
     "Initialize current directory as a caffe net git repo"
 
-    caffe_bin = input('Path to your caffe binary:').strip()
-    model_dir = input('Directory to store output .caffemodel files:').strip()
-    solver_fname  = input('Solver prototxt filename (eg: solver.prototxt)').strip()
-    train_val = input('Training and validation prototxt filename (eg: train_val.prototxt)').strip()
+    caffe_bin = os.path.abspath(raw_input('Path to your caffe binary: ').strip())
+    model_dir = raw_input('Directory to store output .caffemodel files: ').strip()
+    solver_fname  = raw_input('Solver prototxt filename (eg: solver.prototxt): ').strip()
+    train_val = raw_input('Training and validation prototxt filename (eg: train_val.prototxt): ').strip()
 
     with open('.gitcaffe', 'w') as outf:
         json.dump(dict(
@@ -64,20 +72,23 @@ def init():
 
 def run_caffe_command(weights, logfile):
     meta = get_meta()
+    interrupted = False
     with open(logfile, 'w') as outf:
         args = [meta['caffe_bin'], 'train',
                     '-gpu', 'all',
                     '-solver', meta['solver_fname']]
         if weights is not None:
             args.append('-weights')
-            args.append(weights)
+            args.append(os.path.abspath(weights))
+        print 'starting caffe...'
         proc = Popen(args, stdout=PIPE, stderr=STDOUT)
         try:
             prev_loss = None
             for row in proc.stdout:
                 outf.write(row)
                 outf.flush()
-                if 'Iteartion' in row and 'loss =' in row:
+                os.fsync(outf.fileno())
+                if 'Iteration' in row and 'loss =' in row:
                     val = float(row.split('loss =')[1].strip())
                     if prev_loss is None:
                         print 'loss: %f' % val
@@ -85,7 +96,15 @@ def run_caffe_command(weights, logfile):
                         print 'loss: %f (delta: %f)' % (val, val - prev_loss)
                         prev_loss = val
         except KeyboardInterrupt:
-            return
+            proc.send_signal(signal.SIGHUP)
+            interrupted = True
+    print 'waiting for caffe process to stop...'
+    proc.wait()
+    if proc.returncode != 0 and not interrupted:
+        check_call(['tail', '-n', '30', logfile])
+        return False
+    else:
+        return True
 
 def current_commit_sha():
     return check_output(['git', 'rev-parse', 'HEAD']).strip()
@@ -93,8 +112,9 @@ def current_commit_sha():
 def persist_weights():
     meta = get_meta()
     sha = current_commit_sha()
-    files = os.listdir()
-    weight_files = [f for f in files if f.endwith('.caffemodel')]
+    print 'persisting %s' % sha
+    files = os.listdir('.')
+    weight_files = [f for f in files if f.endswith('.caffemodel')]
     solver_files = [f for f in files if f.endswith('.solverstate')]
     last_weight = max(weight_files, key=os.path.getmtime)
     weight_files.remove(last_weight)
@@ -104,7 +124,7 @@ def persist_weights():
         os.rename(f, 'weight_scratch/%s' % f)
     for f in solver_files:
         os.rename(f, 'weight_scratch/%s' % f)
-    check_call(['tar', 'czf', 'weight_scratch/'])
+    check_call(['tar', 'czf', 'weight_scratch.tar.gz', 'weight_scratch/'])
     check_call(['mv', 'weight_scratch.tar.gz', '%s/%s.tar.gz' % (meta['model_dir'], sha)])
     check_call(['rm', '-r', 'weight_scratch/'])
     check_call(['mv', last_weight, '%s/%s.caffemodel' % (meta['model_dir'], sha)])
@@ -124,24 +144,25 @@ def weight_filename():
 @command
 def train():
     " <commit message>: commit prototxt files and finetune from the previous weight matrix (if any)"
-    try:
+    if len(sys.argv) == 3:
         commit_message = sys.argv[2]
-    except IndexError:
+        weight_fname = weight_filename()
+    elif len(sys.argv) == 4:
+        commit_message = sys.argv[2]
+        weight_fname = sys.argv[3]
+    else:
+        print 'wrong number of arguments to train'
         usage()
         sys.exit(1)
     meta = get_meta()
 
-    weight_fname = weight_filename()
-
-    check_call(['git', 'add', meta['solver_fname']])
-    check_call(['git', 'add', meta['train_val']])
-    check_call(['git', 'commit', '-m', commit_message])
+    commit_prototxt(commit_message)
     sha = current_commit_sha()
 
-    run_caffe_command(weight_fname, 'caffe.log')
-    persist_weights()
+    if run_caffe_command(weight_fname, 'caffe.log'):
+        persist_weights()
 
-    check_call(['git', 'tag', 'caffe-weights-%d' % int(time.time())]) # TODO: using time() for ordering is gross
+        check_call(['git', 'tag', 'caffe-weights-%d' % int(time.time())]) # TODO: using time() for ordering is gross
 
 if __name__ == '__main__':
     run()
