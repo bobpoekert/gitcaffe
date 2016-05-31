@@ -109,7 +109,9 @@ def run_caffe_command(weights, logfile):
 def current_commit_sha():
     return check_output(['git', 'rev-parse', 'HEAD']).strip()
 
+@command
 def persist_weights():
+    ": Save any weight files to the model dir"
     meta = get_meta()
     sha = current_commit_sha()
     print 'persisting %s' % sha
@@ -143,7 +145,7 @@ def weight_filename():
 
 @command
 def train():
-    " <commit message>: commit prototxt files and finetune from the previous weight matrix (if any)"
+    " <commit message> [<weight filename>]: commit prototxt files and finetune from the previous weight matrix (if any). If weight filename is 'restart', the net will be trained from scratch."
     if len(sys.argv) == 3:
         commit_message = sys.argv[2]
         weight_fname = weight_filename()
@@ -154,6 +156,9 @@ def train():
         print 'wrong number of arguments to train'
         usage()
         sys.exit(1)
+    if weight_fname == 'restart':
+        print 'training from scratch'
+        weight_fname = None
     meta = get_meta()
 
     commit_prototxt(commit_message)
