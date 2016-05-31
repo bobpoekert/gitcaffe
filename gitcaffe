@@ -133,8 +133,8 @@ def persist_weights():
 def weight_filename():
     ": Prints the filename of the .caffemodel file from the most recent run"
     meta = get_meta()
-    tags = check_output(['git', 'describe', '--tags', 'HEAD']).split('\n')
-    caffe_tags = [t for t in tags if 'caffe-weights-' in t]
+    caffe_tags = [t.strip() for t in check_output(['git', 'tag', '-l', 'caffe-weights-*']).split('\n')]
+    caffe_tags = [t for t in caffe_tags if t]
     if len(caffe_tags) == 0:
         return None
     most_recent_tag = max(caffe_tags, key=lambda t: int(t.split('-')[-1].strip()))
