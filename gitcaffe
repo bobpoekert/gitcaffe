@@ -139,7 +139,8 @@ def weight_filename():
     caffe_tags = [t for t in caffe_tags if t]
     if len(caffe_tags) == 0:
         return None
-    most_recent_tag = max(caffe_tags, key=lambda t: int(t.split('-')[-1].strip()))
+    #most_recent_tag = max(caffe_tags, key=lambda t: int(t.split('-')[-1].strip()))
+    most_recent_tag = caffe_tags[0]
     sha = check_output(['git', 'rev-list', '-n', '1', most_recent_tag]).strip()
     return '%s/%s.caffemodel' % (meta['model_dir'], sha)
 
@@ -163,6 +164,7 @@ def train():
 
     commit_prototxt(commit_message)
     sha = current_commit_sha()
+
 
     if run_caffe_command(weight_fname, 'caffe.log'):
         persist_weights()
