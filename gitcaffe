@@ -81,13 +81,12 @@ def run_caffe_command(weights, logfile):
             args.append('-weights')
             args.append(os.path.abspath(weights))
         print 'starting caffe...'
-        proc = Popen(args, stdout=PIPE, stderr=STDOUT)
+        proc = Popen(args, stdout=PIPE, stderr=STDOUT, bufsize=0)
         try:
             prev_loss = None
             for row in proc.stdout:
                 outf.write(row)
                 outf.flush()
-                os.fsync(outf.fileno())
                 if 'Iteration' in row and 'loss =' in row:
                     val = float(row.split('loss =')[1].strip())
                     if prev_loss is None:
@@ -135,7 +134,8 @@ def persist_weights():
 def weight_filename():
     ": Prints the filename of the .caffemodel file from the most recent run"
     meta = get_meta()
-    caffe_tags = [t.strip() for t in check_output(['git', 'tag', '-l', 'caffe-weights-*']).split('\n')]
+
+    caffe_tags = [t.strip() for t in check_output(['git', 'describe', '--dirty', '--tags']).split('\n')]
     caffe_tags = [t for t in caffe_tags if t]
     if len(caffe_tags) == 0:
         return None
