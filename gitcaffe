@@ -140,7 +140,7 @@ def weight_filename():
     if len(caffe_tags) == 0:
         return None
     #most_recent_tag = max(caffe_tags, key=lambda t: int(t.split('-')[-1].strip()))
-    most_recent_tag = caffe_tags[0]
+    most_recent_tag = caffe_tags[0].replace('-dirty', '')
     sha = check_output(['git', 'rev-list', '-n', '1', most_recent_tag]).strip()
     return '%s/%s.caffemodel' % (meta['model_dir'], sha)
 
