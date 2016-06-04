@@ -70,6 +70,9 @@ def init():
     check_call(['git', 'add', '.gitcaffe'])
     check_call(['git', 'commit', '-m', 'Initial commit'])
 
+def get_prototxt(sha):
+    return check_output(['git', 'show', '%s:train_val.prototxt' % sha])
+
 def run_caffe_command(weights, logfile):
     meta = get_meta()
     interrupted = False
@@ -131,18 +134,21 @@ def persist_weights():
     check_call(['mv', last_weight, '%s/%s.caffemodel' % (meta['model_dir'], sha)])
 
 @command
-def weight_filename():
-    ": Prints the filename of the .caffemodel file from the most recent run"
-    meta = get_meta()
-
+def snapshot_sha():
+    ": Returns the git sha of the most recent caffemodel snapshot"
     caffe_tags = [t.strip() for t in check_output(['git', 'describe', '--dirty', '--tags']).split('\n')]
     caffe_tags = [t for t in caffe_tags if t]
     if len(caffe_tags) == 0:
         return None
-    #most_recent_tag = max(caffe_tags, key=lambda t: int(t.split('-')[-1].strip()))
-    most_recent_tag = caffe_tags[0].replace('-dirty', '')
-    sha = check_output(['git', 'rev-list', '-n', '1', most_recent_tag]).strip()
-    return '%s/%s.caffemodel' % (meta['model_dir'], sha)
+    most_recent_tag = '-'.join(caffe_tags[0].split('-')[:3])
+
+    return check_output(['git', 'rev-list', '-n', '1', most_recent_tag]).strip()
+
+@command
+def weight_filename():
+    ": Returns the filename of the .caffemodel file from the most recent run"
+    meta = get_meta()
+    return '%s/%s.caffemodel' % (meta['model_dir'], snapshot_sha())
 
 @command
 def train():
